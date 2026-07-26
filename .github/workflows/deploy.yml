@@ -1,0 +1,55 @@
+name: Deploy to GitHub Pages
+
+# The site is entirely static: every raster layer is a public tile endpoint and
+# the fire perimeters are fetched straight from WFIGS by the browser. The only
+# build-time input is the Worker URL, which tells the front end where to send
+# assistant traffic.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          # Repository variable, not a secret: it is a public URL and ends up
+          # inlined in the bundle either way.
+          VITE_PROXY_URL: ${{ vars.VITE_PROXY_URL }}
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

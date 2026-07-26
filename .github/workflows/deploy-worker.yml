@@ -1,0 +1,69 @@
+name: Deploy chat worker
+
+# Publishes the Bedrock chat endpoint and pushes the credential straight from
+# GitHub Secrets into the Worker's own secret store — so the token goes from
+# GitHub to Cloudflare without ever being on a laptop or in the repo.
+#
+# Requires two additional repository secrets:
+#   CLOUDFLARE_API_TOKEN  — a token with the "Edit Cloudflare Workers" template
+#   CLOUDFLARE_ACCOUNT_ID — from the Cloudflare dashboard sidebar
+#
+# After the first successful run, set the repository *variable* VITE_PROXY_URL
+# to the printed workers.dev URL and re-run the Pages deploy.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Check Cloudflare credentials are present
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] || [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets first."
+            echo "The assistant needs somewhere to run code — GitHub Pages cannot answer a model call."
+            exit 1
+          fi
+
+      - name: Push the Bedrock credential into the Worker secret store
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+        # `secret put` reads the value from stdin, so the token is never an
+        # argument and never lands in a process list or the run log.
+        run: printf '%s' "$BEDROCK" | npx --yes wrangler@3 secret put AWS_BEARER_TOKEN_BEDROCK
+
+      - name: Deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 deploy
+
+      - name: Next step
+        run: |
+          echo "### Chat worker deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Set the repository **variable** \`VITE_PROXY_URL\` to the workers.dev URL above," >> $GITHUB_STEP_SUMMARY
+          echo "then re-run **Deploy to GitHub Pages**. The assistant will come online." >> $GITHUB_STEP_SUMMARY

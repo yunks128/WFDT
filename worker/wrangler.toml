@@ -1,0 +1,17 @@
+name = "wfdt-chat"
+main = "index.js"
+compatibility_date = "2024-11-01"
+
+# The Bedrock credential is NOT here — it is a Worker secret, pushed from
+# GitHub Secrets by .github/workflows/deploy-worker.yml. Never put
+# AWS_BEARER_TOKEN_BEDROCK in this file; it is committed to the repo.
+[vars]
+AWS_REGION = "us-west-2"
+
+# Lock this down to your Pages origin so the Worker is not an open relay
+# billing your Bedrock account. Comma-separated; "*" allows anyone.
+ALLOWED_ORIGINS = "https://yunks128.github.io"
+
+# Optional: pin the model once you know which one the account is entitled to.
+# Skips the probe on cold requests.
+# BEDROCK_MODEL = "us.anthropic.claude-opus-4-6-v1"
