@@ -1,7 +1,7 @@
 {
  "source": "NOAA NCEP GFS 0.25\u00b0 via NOMADS GRIB filter",
  "cycle": "2026-07-26T12:00:00Z",
- "built": "2026-07-26T16:08:19Z",
+ "built": "2026-07-26T18:38:33Z",
  "variable": "10 m wind (u, v) in m/s",
  "step": 0.25,
  "frames": [
