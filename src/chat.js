@@ -63,16 +63,32 @@ export function createChat({ ctx, els }) {
    * bold, inline code, and bullet lists. Everything is escaped first, so
    * model output can never inject markup.
    */
+  /**
+   * Render the Markdown subset the model actually emits here.
+   *
+   * Everything is escaped first, so model output can never inject markup. The
+   * subset is set by observation rather than guesswork: in testing it reached
+   * for headings, numbered lists and separators as well as bullets and bold,
+   * and anything unsupported arrives as literal "##" or "1." in the panel.
+   * Tables are deliberately absent — they are unreadable at this width, and
+   * the prompt tells the model not to use them.
+   */
   function renderMarkdown(el, raw) {
     const html = raw
       .replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
       .replace(/`([^`\n]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-      // A bare --- is a separator, not a bullet; matched before the list rule
-      // so its dashes are not mistaken for one.
+      // Headings before the rules that follow, so their markers are consumed
+      // rather than mistaken for bullets or a separator.
+      .replace(/^\s*#{1,6}\s+(.*)$/gm, '<h4>$1</h4>')
       .replace(/^\s*---+\s*$/gm, '<hr>')
+      .replace(/^\s*\d+[.)]\s+(.*)$/gm, '<li data-ol>$1</li>')
       .replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>')
+      // Wrap each run of list items, keeping ordered and unordered runs apart
+      // so a numbered list does not lose its numbers to a bullet list.
+      .replace(/(<li data-ol>[\s\S]*?<\/li>)(?!\s*<li data-ol>)/g, '<ol>$1</ol>')
       .replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>')
+      .replace(/ data-ol/g, '')
     el.innerHTML = html
   }
 
