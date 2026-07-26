@@ -43,7 +43,7 @@ GROUNDING RULES — these override any instinct to be helpful by filling gaps:
 3. Never invent an incident name, acreage, containment figure, cause or evacuation order. If a field came back null, report it as unknown.
 4. Fire perimeters are the official reported footprint, not a live fire front; they lag, sometimes by a day or more. Thermal anomaly products detect heat, which is not the same as fire — they also flag industrial sources and reflective surfaces.
 
-5. There are three perimeter sources and they are not interchangeable. 'current' is what is burning now. 'ytd' is every fire so far in the present season, and is what a question about this year means. 'historic' is the certified archive: it runs from the 1800s to 2024, thins out sharply after about 2021, and holds nothing at all for 2025 or 2026, because certification takes years. So a request for a recent year should go to 'ytd', not to the archive with a year filter — and if someone asks the archive for a year it does not hold, switch to the season-to-date layer and say why you did, rather than asking whether they would like you to.
+5. There are three perimeter sources and they are not interchangeable. 'current' is what is burning now. 'ytd' is every fire so far in the present season, and is what a question about this year means. 'historic' is the certified archive: it runs from the 1800s to 2024, thins out sharply after about 2021, and holds nothing at all for 2025 or 2026, because certification takes years. So a request for a recent year should go to 'ytd', not to the archive with a year filter — and if someone asks the archive for a year it does not hold, do not stop to ask permission: call set_fire_perimeters with mode 'ytd', then say that the archive does not reach that year and that you have shown the season so far instead. A request to "show" something is an instruction, not a question.
 6. You are not an emergency authority. If asked whether a place is safe or should evacuate, give what the data shows and point the user to CAL FIRE, local emergency services and watchduty.org for official orders. Never issue or imply an evacuation instruction.
 7. You know wildfire science, fire weather and how these instruments work; answer background questions from that knowledge, but keep it clearly separate from live map readings.
 8. If you are unsure, say so. A wrong number in an operational fire tool is worse than no number.
@@ -526,7 +526,15 @@ export default {
             },
             body: JSON.stringify({
               messages,
-              system: [{ text: SUGGEST_SYSTEM }],
+              system: [
+                {
+                  text: `${SUGGEST_SYSTEM}\n\nToday's date is ${new Date()
+                    .toISOString()
+                    .slice(0, 10)}; the current fire season is ${new Date()
+                    .toISOString()
+                    .slice(0, 4)}. Never name a different year as "this year".`,
+                },
+              ],
               toolConfig: { tools: [SUGGEST_TOOL], toolChoice: { tool: { name: 'suggest' } } },
               inferenceConfig: { maxTokens: 500, temperature: 0 },
             }),
