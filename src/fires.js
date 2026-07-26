@@ -114,9 +114,23 @@ export function createFires(map) {
       const gj = await r.json()
       // A slower earlier request must not overwrite a newer view.
       if (mine !== seq) return
+
+      // ArcGIS reports its own failures as a 200 carrying {error:{...}}, and
+      // handing that to addData makes Leaflet throw "Invalid GeoJSON object"
+      // from deep inside the render — an unrecoverable-looking crash for what
+      // is really just a transient service error. Check the shape first and
+      // pass the service's own message through.
+      if (gj?.error) throw new Error(gj.error.message || 'WFIGS rejected the query')
+      if (gj?.type !== 'FeatureCollection' || !Array.isArray(gj.features)) {
+        throw new Error('WFIGS returned something that is not a FeatureCollection')
+      }
+
+      // A feature with no geometry cannot be drawn; Leaflet skips it silently,
+      // so count what actually made it onto the map rather than what arrived.
+      const drawable = gj.features.filter((f) => f?.geometry?.type)
       layer.clearLayers()
-      layer.addData(gj)
-      state.count = (gj.features || []).length
+      layer.addData({ type: 'FeatureCollection', features: drawable })
+      state.count = drawable.length
     } catch (e) {
       if (mine === seq) state.error = e.message
     } finally {
