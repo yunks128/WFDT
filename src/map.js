@@ -13,7 +13,9 @@ import { BASEMAPS, LABELS, OVERLAYS, overlayUrl, tmsMaxZoom } from './layers.js'
 export const LA = { center: [34.1, -118.3], zoom: 9 }
 export const LA_BOUNDS = L.latLngBounds([33.4, -119.5], [34.9, -117.0])
 
-const PANES = { basemap: 200, raster: 400, vector: 500, labels: 550 }
+// The wind layer defaults to a pane called 'wind'; without it the canvases
+// have nowhere to attach and the layer silently draws nothing.
+const PANES = { basemap: 200, raster: 400, wind: 450, vector: 500, labels: 550 }
 
 export function createMap(el) {
   const map = L.map(el, {
@@ -31,10 +33,15 @@ export function createMap(el) {
     map.createPane(name).style.zIndex = String(z)
   }
 
+  // Pass `subdomains` only when the URL actually has an {s} placeholder.
+  // Setting it to undefined does not fall back to Leaflet's default — it
+  // overwrites it, and _getSubdomain then reads .length of undefined on the
+  // first tile, which takes the whole module down before the panel is built.
   const labels = L.tileLayer(LABELS.url, {
     pane: 'labels',
-    subdomains: LABELS.subdomains,
-    maxZoom: LABELS.maxZoom,
+    ...(LABELS.subdomains ? { subdomains: LABELS.subdomains } : {}),
+    maxZoom: 18,
+    maxNativeZoom: LABELS.maxZoom,
     attribution: LABELS.attribution,
   })
 

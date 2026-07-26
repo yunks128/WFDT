@@ -75,3 +75,20 @@ sources and reflective surfaces alongside actual fires.
 **A 404 tile is normal.** Every source in this catalogue returns 404 for a tile
 it holds no data for, rather than a blank image, so missing tiles are drawn as
 nothing rather than as broken.
+
+## Wind
+
+NOAA GFS 10 m wind over southern California (30–40°N, 125–110°W) at the native
+quarter-degree spacing, prebuilt into ~21 KiB of static JSON per forecast hour
+by `scripts/build_wind.py` and refreshed every six hours by a scheduled
+workflow. It renders as an interpolated speed raster with pale particles over
+it, and the assistant can sample speed and direction at any point.
+
+The reference mission's own wind layers are HRRR, served from firepanel's
+`veloserver`, which does not answer publicly — so this is GFS rather than HRRR,
+coarser but reachable by anyone.
+
+```bash
+pip install eccodes
+npm run wind          # → public/data/wind/{index,f000,f006,…}.json
+```

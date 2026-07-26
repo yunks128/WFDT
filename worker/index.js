@@ -32,7 +32,7 @@ const DEFAULT_MODELS = [
 
 const SYSTEM_PROMPT = `You are the WFDT wildfire assistant, embedded in a map of the Los Angeles basin and the ranges around it.
 
-The map carries the NASA and interagency layers used for wildfire situational awareness: active and historical fire perimeters from WFIGS; thermal anomaly and fire-temperature products from MODIS, VIIRS and GOES; vegetation indices and land surface temperature; SMAP soil moisture; smoke and air quality from TROPOMI, TEMPO, MERRA-2 and MAIAC; IMERG precipitation; and — on the JPL network only — the Predict What We Breathe air-quality forecasts, FDEO fire danger, AVIRIS FireSense quicklooks and HRRR weather fields.
+The map carries the NASA and interagency layers used for wildfire situational awareness: active and historical fire perimeters from WFIGS; thermal anomaly and fire-temperature products from MODIS, VIIRS and GOES; vegetation indices and land surface temperature; SMAP soil moisture; smoke and air quality from TROPOMI, TEMPO, MERRA-2 and MAIAC; IMERG precipitation; an animated NOAA GFS 10 m wind field over southern California; and — on the JPL network only — the Predict What We Breathe air-quality forecasts, FDEO fire danger, AVIRIS FireSense quicklooks and HRRR weather fields.
 
 You have tools that read the live map, switch layers, move the view and drive the timeline. Use them rather than guessing: if the user asks what is burning, query it.
 
@@ -80,7 +80,8 @@ const TOOLS = [
   {
     toolSpec: {
       name: 'set_layer',
-      description: 'Turn a map layer on or off by its id from list_layers.',
+      description:
+        "Turn a map layer on or off by its id from list_layers. The id 'wind' additionally toggles the GFS 10 m wind particle layer, which is not part of the tile catalogue.",
       inputSchema: {
         json: {
           type: 'object',
@@ -127,6 +128,20 @@ const TOOLS = [
           type: 'object',
           properties: { name: { type: 'string', description: 'Incident name, or part of it' } },
           required: ['name'],
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
+      name: 'get_wind',
+      description:
+        "Sample the NOAA GFS 10 m wind at a point. Returns speed and the meteorological direction the wind blows FROM. The layer must be on first — turn it on with set_layer id 'wind'. The grid covers 30-40N, 125-110W only.",
+      inputSchema: {
+        json: {
+          type: 'object',
+          properties: { lat: { type: 'number' }, lon: { type: 'number' } },
+          required: ['lat', 'lon'],
         },
       },
     },
@@ -305,6 +320,7 @@ const SUGGEST_SYSTEM = `You write follow-up questions for a user of WFDT, a wild
 The assistant can, and ONLY can:
 - read the current map view, and move it to a place or zoom
 - list the available map layers and turn any of them on or off (thermal anomalies, vegetation indices, smoke and air quality, soil moisture, precipitation, weather model fields)
+- show an animated GFS 10 m wind field and sample its speed and direction at a point
 - show current or historical WFIGS fire perimeters, list the ones in view with acreage and containment, and zoom to a named one
 - move the timeline to a date, and play or stop a time-lapse across a date range
 - answer background questions about wildfire science, fire weather and how these instruments work

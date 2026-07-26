@@ -669,6 +669,34 @@ input[type='range']::-moz-range-thumb {
   border-radius: 3px;
   margin-bottom: 4px;
 }
+/* Several layers can be on at once, so each gets its own block. */
+.legend-item + .legend-item {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+.legend-note {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.legend-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.legend-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--fg-dim, #b9c6d2);
+}
+.legend-swatch i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-block;
+}
 .legend-img {
   display: block;
   /* Size by HEIGHT, not width. GIBS legend SVGs do not share an aspect ratio

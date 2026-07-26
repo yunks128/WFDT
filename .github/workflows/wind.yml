@@ -1,0 +1,43 @@
+name: Refresh GFS wind field
+
+on:
+  schedule:
+    # GFS cycles at 00/06/12/18Z and publishes roughly 3.5-5 h later, so run
+    # a little after each cycle is reliably on disk.
+    - cron: '40 5,11,17,23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wind
+  cancel-in-progress: true
+
+jobs:
+  build-wind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install ecCodes bindings
+        run: pip install --quiet eccodes
+
+      - name: Fetch and convert GFS 10 m winds
+        run: python scripts/build_wind.py --out public/data/wind --hours 0,6,12,18,24
+
+      - name: Commit if the field changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/wind
+          if git diff --staged --quiet; then
+            echo "No change in the wind field; nothing to commit."
+          else
+            git commit -m "data: refresh GFS wind field"
+            git push
+          fi

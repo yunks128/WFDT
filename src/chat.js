@@ -29,6 +29,7 @@ const SUGGESTIONS = [
   { label: 'Thermal hotspots', text: 'Turn on the VIIRS NOAA-20 thermal anomalies layer.' },
   { label: 'Smoke and air quality', text: 'Which layers show smoke or air quality, and can you turn one on?' },
   { label: 'Vegetation dryness', text: 'Show me a vegetation index layer so I can judge fuel dryness.' },
+  { label: 'Wind over the basin', text: 'Turn on the wind layer and tell me the wind over downtown Los Angeles.' },
   { label: 'Zoom to Palisades', text: 'Fly to the Pacific Palisades area of Los Angeles.' },
 ]
 
@@ -216,6 +217,17 @@ export function createChat({ ctx, els }) {
     },
 
     set_layer({ id, on }) {
+      // The wind layer is not part of the tile catalogue, so route it here
+      // rather than leaving the assistant unable to switch the one field it
+      // can actually sample.
+      if (id === 'wind') {
+        const cb = document.getElementById('x-wind')
+        if (cb && cb.checked !== !!on) {
+          cb.checked = !!on
+          cb.dispatchEvent(new Event('change'))
+        }
+        return { ok: true, id: 'wind', on: !!on }
+      }
       const ok = ctx.setLayerById(id, !!on)
       return ok ? { ok: true, id, on: !!on } : { error: `Unknown layer id "${id}".` }
     },
@@ -245,6 +257,29 @@ export function createChat({ ctx, els }) {
       return hit
         ? { ok: true, focused: hit }
         : { error: `No loaded perimeter matches "${name}".` }
+    },
+
+    get_wind({ lat, lon }) {
+      if (!ctx.isWindOn()) {
+        return {
+          error:
+            'The wind layer is off or still loading. Turn it on first with ' +
+            'set_layer id "wind", then ask again.',
+        }
+      }
+      const w = ctx.wind.at(lat, lon)
+      if (!w) {
+        return { error: 'No wind data there — the grid covers 30-40N, 125-110W.' }
+      }
+      return {
+        lat: +(+lat).toFixed(2),
+        lon: +(+lon).toFixed(2),
+        speedMs: +w.speed.toFixed(1),
+        speedMph: +(w.speed * 2.23694).toFixed(1),
+        fromDirectionDeg: Math.round((w.dir + 360) % 360),
+        validAt: ctx.getWindValid(),
+        source: 'NOAA GFS 0.25 deg, 10 m wind',
+      }
     },
 
     fly_to({ lat, lon, zoom }) {
@@ -452,6 +487,8 @@ function describe(name, out) {
       return `perimeters ${out.mode}`
     case 'focus_fire':
       return `focused ${out.focused.name}`
+    case 'get_wind':
+      return `${out.speedMs} m/s from ${out.fromDirectionDeg}°`
     case 'fly_to':
       return `moved to ${out.movedTo.lat.toFixed(1)}, ${out.movedTo.lon.toFixed(1)}`
     case 'set_date':

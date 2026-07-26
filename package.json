@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "wind": "python3 scripts/build_wind.py"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
