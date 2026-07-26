@@ -553,6 +553,7 @@ createChat({
     getBasemap: () => BASEMAPS.find((b) => $(`base-${b.id}`)?.checked)?.name ?? null,
     getActiveOverlays: () =>
       OVERLAYS.filter((o) => overlayState.get(o.id)).map((o) => ({ id: o.id, name: o.name })),
+    hiddenLayerCount: () => (gatedReachable ? 0 : gatedIds.length),
     layerIds: () =>
       OVERLAYS.filter((o) => !o.gated || gatedReachable).map((o) => ({
         id: o.id,

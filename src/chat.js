@@ -12,7 +12,9 @@ import { api } from './config.js'
  * the tools locally, append the results, and send again.
  */
 
-const MAX_TOOL_ROUNDS = 5
+// Multi-step questions — compare two years, check three places — legitimately
+// need several rounds. Five was low enough that ordinary requests hit it.
+const MAX_TOOL_ROUNDS = 8
 
 /**
  * Opening suggestions.
@@ -66,6 +68,9 @@ export function createChat({ ctx, els }) {
       .replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
       .replace(/`([^`\n]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      // A bare --- is a separator, not a bullet; matched before the list rule
+      // so its dashes are not mistaken for one.
+      .replace(/^\s*---+\s*$/gm, '<hr>')
       .replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>')
       .replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>')
     el.innerHTML = html
@@ -209,11 +214,21 @@ export function createChat({ ctx, els }) {
       const hits = q
         ? all.filter((l) => `${l.name} ${l.group}`.toLowerCase().includes(q))
         : all
+      const hidden = ctx.hiddenLayerCount()
       return {
         count: hits.length,
         totalAvailable: all.length,
         layers: hits.slice(0, 40),
-        ...(hits.length > 40 ? { note: 'Truncated to 40 — search to narrow it.' } : {}),
+        // Without this a search that matches only JPL-hosted layers returns
+        // zero, and the reason — those layers are unreachable from here — is
+        // invisible. Reporting the count makes the difference explicit.
+        ...(hidden
+          ? {
+              unavailableOnThisNetwork: hidden,
+              note: `${hidden} further layers (Predict What We Breathe, FDEO, FireSense, HRRR) are served only from JPL hosts and cannot be shown from this network.`,
+            }
+          : {}),
+        ...(hits.length > 40 ? { truncated: 'Showing 40 — search to narrow it.' } : {}),
       }
     },
 
@@ -234,12 +249,26 @@ export function createChat({ ctx, els }) {
     },
 
     list_fires({ limit = 10 }) {
-      const list = ctx.fires.list(Math.min(Math.max(1, limit | 0), 40))
+      const all = ctx.fires.list(1000)
+      const list = all.slice(0, Math.min(Math.max(1, limit | 0), 40))
+      const withAcres = all.filter((f) => f.acres != null)
+      const sum = withAcres.reduce((a, f) => a + f.acres, 0)
       return {
         count: list.length,
-        inViewTotal: ctx.fires.state.count,
+        loadedTotal: all.length,
+        // Totalling here saves a round trip per question about extent, which
+        // is otherwise several list calls the model has to add up itself.
+        totalAcresLoaded: withAcres.length ? Math.round(sum) : null,
+        largestAcres: withAcres.length ? Math.round(withAcres[0].acres) : null,
         fires: list,
-        ...(list.length
+        // The service is asked for a bounded number of records over the visible
+        // extent, so a sum is a floor, not a total. Saying so is the difference
+        // between a useful figure and a wrong one.
+        caveat:
+          'Perimeters are fetched for the current view and capped per request, ' +
+          'so these totals cover what is loaded, not everything that burned. ' +
+          'Zoom in for a complete set of a smaller area.',
+        ...(all.length
           ? {}
           : {
               note:
@@ -382,6 +411,34 @@ export function createChat({ ctx, els }) {
     return done
   }
 
+  /**
+   * Run one model turn into its own bubble.
+   *
+   * Returns the stop reason and whatever text was streamed. A round that only
+   * calls tools produces no text, and its placeholder is removed rather than
+   * left on screen — otherwise a multi-step answer accumulates a column of
+   * empty "…" bubbles, one per tool call.
+   */
+  async function runTurn() {
+    const el = bubble('msg-ai', '…')
+    let raw = ''
+    let started = false
+    const done = await turn((chunk) => {
+      if (!started) {
+        el.textContent = ''
+        started = true
+      }
+      // Stream as plain text (cheap, and never half-parsed markup), then
+      // format once the turn is complete.
+      raw += chunk
+      el.textContent = raw
+      scrollDown()
+    })
+    if (started && raw.trim()) renderMarkdown(el, raw)
+    else el.remove()
+    return { done, raw: started ? raw : '' }
+  }
+
   async function send(text) {
     if (busy || !reachable || !text.trim()) return
     busy = true
@@ -392,27 +449,13 @@ export function createChat({ ctx, els }) {
     history.push({ role: 'user', content: [{ text }] })
     transcript.push({ role: 'user', text })
 
-    let out = bubble('msg-ai', '')
-    out.textContent = '…'
-    let started = false
-    let raw = ''
+    let lastText = ''
+    let capped = false
 
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        raw = ''
-        const done = await turn((chunk) => {
-          if (!started) {
-            out.textContent = ''
-            started = true
-          }
-          // Stream as plain text (cheap, and never half-parsed markup),
-          // then format once the turn is complete.
-          raw += chunk
-          out.textContent = raw
-          scrollDown()
-        })
-
-        if (started && raw) renderMarkdown(out, raw)
+        const { done, raw } = await runTurn()
+        if (raw) lastText = raw
         history.push({ role: 'assistant', content: done.content })
 
         if (done.stopReason !== 'tool_use') break
@@ -420,19 +463,43 @@ export function createChat({ ctx, els }) {
         const results = await runTools(done.content)
         if (!results.length) break
         history.push({ role: 'user', content: results })
-
-        // The follow-up turn writes into a fresh bubble.
-        out = bubble('msg-ai', '…')
-        started = false
+        capped = round === MAX_TOOL_ROUNDS - 1
       }
-      if (!started && out.textContent === '…') out.remove()
+
+      /**
+       * Guarantee an answer.
+       *
+       * A question that needs more steps than the cap allows used to end on a
+       * tool result and simply stop, leaving the user with a column of tool
+       * chips and no reply. One more turn, told to work with what it already
+       * has, turns that into a partial answer with its limits stated — which
+       * is what a person would do on running out of time.
+       */
+      if (capped || !lastText) {
+        history.push({
+          role: 'user',
+          content: [
+            {
+              text:
+                'You have reached the limit on tool calls for this turn. Answer now ' +
+                'from what you already have, without calling any more tools, and say ' +
+                'plainly what you could not finish.',
+            },
+          ],
+        })
+        const { raw } = await runTurn()
+        if (raw) lastText = raw
+      }
+
+      if (!lastText) {
+        bubble('msg-sys', 'The assistant finished without an answer. Try rephrasing.')
+      }
     } catch (e) {
-      if (out.textContent === '…') out.remove()
       bubble('msg-sys', `⚠ ${e.message}`)
     } finally {
       busy = false
       input.disabled = false
-      if (raw.trim()) transcript.push({ role: 'assistant', text: raw })
+      if (lastText.trim()) transcript.push({ role: 'assistant', text: lastText })
       setChipsDisabled(false)
       parkSuggestions()
       scrollDown()
