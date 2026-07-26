@@ -129,6 +129,26 @@ const TOOLS = [
   },
   {
     toolSpec: {
+      name: 'get_fire_stats',
+      description:
+        'Exact number of fires and total acreage for the visible extent, queried from the service rather than counted off the map. Use this for any question about how much burned; list_fires only sees the capped set that is drawn. Returns complete:false when the service truncated, in which case report the figure as a floor.',
+      inputSchema: {
+        json: {
+          type: 'object',
+          properties: {
+            mode: {
+              type: 'string',
+              enum: ['current', 'ytd', 'historic'],
+              description: 'Defaults to the layer currently shown',
+            },
+            year: { type: 'integer', description: 'Fire year, for the historic archive only' },
+          },
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
       name: 'focus_fire',
       description:
         'Zoom to a named fire perimeter and open its detail popup, as if the user had clicked it. Only matches perimeters already loaded.',

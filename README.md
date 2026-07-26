@@ -76,6 +76,21 @@ sources and reflective surfaces alongside actual fires.
 it holds no data for, rather than a blank image, so missing tiles are drawn as
 nothing rather than as broken.
 
+## Counting acreage
+
+Summing the perimeters drawn on the map gives a floor, not a total: the layer
+fetches a bounded number of full polygons for the visible extent. `get_fire_stats`
+asks the service the same question with `returnGeometry=false` and only the
+acreage column, which is cheap enough to return every matching record — the
+2018 archive over Los Angeles is 162 fires and 146,873 acres, against the 156
+and ~145,500 you get by adding up what is drawn.
+
+`outStatistics` would be the obvious tool for this and is not usable: the
+service charges it against a request-unit quota that a spatial sum exceeds
+every time, returning 429 regardless of how long you wait. Attribute-only
+paging is the way through, and the query reports `exceededTransferLimit` so a
+truncated answer is labelled a floor rather than presented as a total.
+
 ## Wind
 
 NOAA GFS 10 m wind over southern California (30–40°N, 125–110°W) at the native

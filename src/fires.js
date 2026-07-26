@@ -22,6 +22,7 @@ const HOST = 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services
 const SOURCES = {
   current: {
     label: 'WFIGS interagency perimeters (current)',
+    acreField: 'poly_GISAcres',
     url: `${HOST}/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query`,
     fields: [
       'poly_IncidentName',
@@ -35,6 +36,7 @@ const SOURCES = {
   },
   ytd: {
     label: 'WFIGS interagency perimeters (year to date)',
+    acreField: 'poly_GISAcres',
     url: `${HOST}/WFIGS_Interagency_Perimeters_YearToDate/FeatureServer/0/query`,
     fields: [
       'poly_IncidentName',
@@ -48,6 +50,7 @@ const SOURCES = {
   },
   historic: {
     label: 'Interagency fire perimeter history',
+    acreField: 'GIS_ACRES',
     url: `${HOST}/InterAgencyFirePerimeterHistory_All_Years_View/FeatureServer/0/query`,
     fields: ['INCIDENT', 'FIRE_YEAR_INT', 'GIS_ACRES'].join(','),
     limit: 300,
@@ -129,6 +132,52 @@ function popupHtml(d, source) {
 function markerRadius(acres) {
   const a = Math.max(1, acres ?? 1)
   return Math.max(4, Math.min(11, 3 + Math.log10(a) * 2))
+}
+
+/**
+ * Exact totals for an extent, without drawing anything.
+ *
+ * The map layer fetches a bounded number of full polygons, so summing what is
+ * drawn gives a floor rather than a total. This asks the same question with
+ * returnGeometry=false and only the acreage column, which is cheap enough to
+ * return every matching record: the 2018 archive over Los Angeles comes back
+ * as 146 fires and 144,631 acres in one request.
+ *
+ * outStatistics would be the obvious tool and is not usable here — the service
+ * charges it against a request-unit quota that a spatial sum exceeds every
+ * time, returning 429 no matter how long you wait.
+ */
+async function fetchTotals(src, bounds, year) {
+  const q = new URLSearchParams({
+    where: year ? `FIRE_YEAR_INT=${Number(year)}` : '1=1',
+    outFields: src.acreField,
+    returnGeometry: 'false',
+    geometryType: 'esriGeometryEnvelope',
+    geometry: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()].join(','),
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    f: 'json',
+    resultRecordCount: '2000',
+  })
+  const r = await fetch(`${src.url}?${q}`)
+  if (!r.ok) throw new Error(`WFIGS HTTP ${r.status}`)
+  const j = await r.json()
+  if (j?.error) {
+    throw new Error(
+      j.error.code === 429
+        ? 'The perimeter service is rate limiting requests right now. Try again shortly.'
+        : j.error.message || 'WFIGS rejected the query'
+    )
+  }
+  const feats = j.features || []
+  const acres = feats.reduce((a, f) => a + (f.attributes?.[src.acreField] || 0), 0)
+  return {
+    fires: feats.length,
+    acres: Math.round(acres),
+    // The service flags when it truncated, which is the difference between a
+    // total and a floor. Passing it on is the whole point of this query.
+    complete: !j.exceededTransferLimit,
+  }
 }
 
 export function createFires(map) {
@@ -233,6 +282,41 @@ export function createFires(map) {
      * Only meaningful for the historical layer; the current and year-to-date
      * services are already a single season by definition.
      */
+    /**
+     * Count and acreage for the visible extent, from the service rather than
+     * from what is drawn. `mode` defaults to whatever layer is showing.
+     */
+    async stats({ mode: m, year: y } = {}) {
+      const src = SOURCES[m || mode]
+      if (!src) {
+        return { error: 'No perimeter layer is selected. Turn one on first.' }
+      }
+      const b = map.getBounds()
+      try {
+        const t = await fetchTotals(src, b, (m || mode) === 'historic' ? (y ?? year) : null)
+        return {
+          source: src.label,
+          ...(y ?? ((m || mode) === 'historic' ? year : null)
+            ? { year: y ?? year }
+            : {}),
+          extent: {
+            north: +b.getNorth().toFixed(2),
+            south: +b.getSouth().toFixed(2),
+            west: +b.getWest().toFixed(2),
+            east: +b.getEast().toFixed(2),
+          },
+          fires: t.fires,
+          totalAcres: t.acres,
+          complete: t.complete,
+          note: t.complete
+            ? 'Every matching perimeter in this extent is counted.'
+            : 'The service truncated the result, so this is a floor. Zoom in for an exact figure.',
+        }
+      } catch (e) {
+        return { error: e.message }
+      }
+    },
+
     setYear(y) {
       year = y ? Number(y) : null
       if (mode === 'historic') load()

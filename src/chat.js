@@ -281,9 +281,9 @@ export function createChat({ ctx, els }) {
         // extent, so a sum is a floor, not a total. Saying so is the difference
         // between a useful figure and a wrong one.
         caveat:
-          'Perimeters are fetched for the current view and capped per request, ' +
-          'so these totals cover what is loaded, not everything that burned. ' +
-          'Zoom in for a complete set of a smaller area.',
+          'These figures cover the perimeters drawn on the map, which are ' +
+          'capped per request. For an exact count and acreage over this extent, ' +
+          'call get_fire_stats instead.',
         ...(all.length
           ? {}
           : {
@@ -296,6 +296,10 @@ export function createChat({ ctx, els }) {
 
     set_fire_perimeters({ mode, year }) {
       return ctx.setFires(mode === 'off' ? null : mode, year)
+    },
+
+    get_fire_stats({ mode, year }) {
+      return ctx.fires.stats({ mode, year })
     },
 
     focus_fire({ name }) {
@@ -575,6 +579,8 @@ function describe(name, out) {
       return `${out.speedMs} m/s from ${out.fromDirectionDeg}°`
     case 'fly_to':
       return `moved to ${out.movedTo.lat.toFixed(1)}, ${out.movedTo.lon.toFixed(1)}`
+    case 'get_fire_stats':
+      return `${out.fires} fires, ${out.totalAcres?.toLocaleString()} acres${out.complete ? '' : ' (floor)'}`
     case 'set_date':
       return out.clamped ? `clamped to ${out.date}` : out.date
     case 'animate_time':
