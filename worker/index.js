@@ -192,6 +192,90 @@ const TOOLS = [
   },
 ]
 
+/**
+ * Decoder for the AWS `vnd.amazon.eventstream` framing, written against
+ * Uint8Array/DataView because Workers have no Node Buffer.
+ *
+ * Frame: [4] total length [4] headers length [4] prelude CRC
+ *        [headers] [payload] [4] message CRC
+ * Header entry: [1] name len, name, [1] value type, value (type 7 = string).
+ * CRCs are not verified — the transport is TLS, and a corrupt frame surfaces
+ * as a JSON parse error the caller already handles.
+ */
+class EventStreamDecoder {
+  constructor() {
+    this.buf = new Uint8Array(0)
+  }
+
+  push(chunk) {
+    const merged = new Uint8Array(this.buf.length + chunk.length)
+    merged.set(this.buf, 0)
+    merged.set(chunk, this.buf.length)
+    this.buf = merged
+
+    const out = []
+    const td = new TextDecoder()
+
+    while (this.buf.length >= 16) {
+      const view = new DataView(this.buf.buffer, this.buf.byteOffset, this.buf.byteLength)
+      const total = view.getUint32(0)
+      if (!Number.isFinite(total) || total < 16 || total > 1 << 26) {
+        this.buf = new Uint8Array(0) // unrecoverable desync
+        break
+      }
+      if (this.buf.length < total) break
+
+      const headersLen = view.getUint32(4)
+      const headers = this.#headers(this.buf.subarray(12, 12 + headersLen), td)
+      const payload = this.buf.subarray(12 + headersLen, total - 4)
+
+      let parsed = null
+      if (payload.length) {
+        try {
+          parsed = JSON.parse(td.decode(payload))
+        } catch {
+          parsed = null
+        }
+      }
+      out.push({
+        type: headers[':event-type'],
+        messageType: headers[':message-type'],
+        payload: parsed,
+      })
+      this.buf = this.buf.slice(total)
+    }
+    return out
+  }
+
+  #headers(buf, td) {
+    const h = {}
+    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
+    let o = 0
+    while (o < buf.length) {
+      const nameLen = view.getUint8(o)
+      o += 1
+      const name = td.decode(buf.subarray(o, o + nameLen))
+      o += nameLen
+      const type = view.getUint8(o)
+      o += 1
+      if (type === 7 || type === 6) {
+        const len = view.getUint16(o)
+        o += 2
+        if (type === 7) h[name] = td.decode(buf.subarray(o, o + len))
+        o += len
+      } else if (type === 0 || type === 1) {
+        // boolean — no payload
+      } else if (type === 2) o += 1
+      else if (type === 3) o += 2
+      else if (type === 4) o += 4
+      else if (type === 5 || type === 8) o += 8
+      else if (type === 9) o += 16
+      else break // unknown type: cannot safely walk further
+    }
+    return h
+  }
+}
+
 function cors(env, request) {
   const allowed = (env.ALLOWED_ORIGINS || '*').split(',').map((s) => s.trim())
   const origin = request.headers.get('origin')
