@@ -192,6 +192,30 @@ const TOOLS = [
   },
 ]
 
+function cors(env, request) {
+  const allowed = (env.ALLOWED_ORIGINS || '*').split(',').map((s) => s.trim())
+  const origin = request.headers.get('origin')
+  const allow =
+    allowed.includes('*') || !origin ? '*' : allowed.includes(origin) ? origin : null
+  return {
+    ...(allow ? { 'Access-Control-Allow-Origin': allow, Vary: 'Origin' } : {}),
+    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  }
+}
+
+/**
+ * Follow-up suggestions are generated separately from the answer.
+ *
+ * They cannot come from the main turn: they depend on what the assistant just
+ * said, so by the time there is anything to react to that turn has finished
+ * streaming. A second small call is cheaper and simpler than a tool round, and
+ * because it runs after the answer is on screen it costs the reader nothing.
+ *
+ * The capability list is spelled out because a suggestion the app cannot act
+ * on is worse than a generic one — it invites a question that can only be
+ * answered with "I can't do that".
+ */
 const SUGGEST_SYSTEM = `You write follow-up questions for a user of WFDT, a wildfire map of the Los Angeles area with a built-in assistant.
 
 The assistant can, and ONLY can:
