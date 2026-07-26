@@ -13,26 +13,38 @@ import L from 'leaflet'
  * and pulling all of them to draw a county would be slow for no benefit.
  */
 
-const CURRENT =
-  'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/' +
-  'WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query'
-const HISTORIC =
-  'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/' +
-  'InterAgencyFirePerimeterHist/FeatureServer/0/query'
+const HOST = 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services'
 
-const FIELDS = [
-  'poly_IncidentName',
-  'poly_GISAcres',
-  'attr_FireDiscoveryDateTime',
-  'attr_PercentContained',
-  'attr_IncidentTypeCategory',
-  'attr_POOState',
-].join(',')
+// The two archives are separate services with entirely different schemas, so
+// each carries its own field list. The historical one is named
+// InterAgencyFirePerimeterHistory_All_Years_View — the shorter name the
+// reference mission used does not resolve, and asking for it returns a 400.
+const SOURCES = {
+  current: {
+    label: 'WFIGS interagency perimeters (current)',
+    url: `${HOST}/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query`,
+    fields: [
+      'poly_IncidentName',
+      'poly_GISAcres',
+      'attr_FireDiscoveryDateTime',
+      'attr_PercentContained',
+      'attr_IncidentTypeCategory',
+      'attr_POOState',
+    ].join(','),
+    limit: 400,
+  },
+  historic: {
+    label: 'Interagency fire perimeter history',
+    url: `${HOST}/InterAgencyFirePerimeterHistory_All_Years_View/FeatureServer/0/query`,
+    fields: ['INCIDENT', 'FIRE_YEAR_INT', 'GIS_ACRES'].join(','),
+    limit: 300,
+  },
+}
 
-function esriQuery(url, bounds, extra = {}) {
+function esriQuery(src, bounds) {
   const q = new URLSearchParams({
     where: '1=1',
-    outFields: extra.outFields ?? FIELDS,
+    outFields: src.fields,
     geometryType: 'esriGeometryEnvelope',
     geometry: [
       bounds.getWest(),
@@ -44,9 +56,9 @@ function esriQuery(url, bounds, extra = {}) {
     spatialRel: 'esriSpatialRelIntersects',
     outSR: '4326',
     f: 'geojson',
-    resultRecordCount: String(extra.limit ?? 400),
+    resultRecordCount: String(src.limit),
   })
-  return `${url}?${q}`
+  return `${src.url}?${q}`
 }
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -54,12 +66,13 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 function normalise(f) {
   const p = f.properties || {}
   return {
-    name: p.poly_IncidentName || p.INCIDENT || p.FIRE_NAME || 'Unnamed incident',
+    name: p.poly_IncidentName || p.INCIDENT || 'Unnamed incident',
     acres: num(p.poly_GISAcres ?? p.GIS_ACRES),
     discovered: p.attr_FireDiscoveryDateTime ?? null,
     contained: num(p.attr_PercentContained),
     category: p.attr_IncidentTypeCategory || null,
     state: p.attr_POOState || null,
+    year: p.FIRE_YEAR_INT ?? null,
   }
 }
 
@@ -70,13 +83,14 @@ function style(acres) {
   return { color: colour, weight: 1.6, opacity: 0.95, fillColor: colour, fillOpacity: 0.22 }
 }
 
-function popupHtml(d) {
+function popupHtml(d, source) {
   const esc = (s) =>
     String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
   const rows = []
   if (d.acres != null) rows.push(['Size', `${Math.round(d.acres).toLocaleString()} acres`])
   if (d.contained != null) rows.push(['Contained', `${Math.round(d.contained)}%`])
   if (d.discovered) rows.push(['Discovered', new Date(d.discovered).toISOString().slice(0, 10)])
+  if (d.year != null) rows.push(['Year', String(d.year)])
   if (d.category) rows.push(['Type', d.category])
   if (d.state) rows.push(['State', d.state])
   return (
@@ -84,18 +98,56 @@ function popupHtml(d) {
     `<table class="pop-tbl">${rows
       .map((r) => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`)
       .join('')}</table>` +
-    `<div class="pop-src">WFIGS interagency perimeters</div></div>`
+    `<div class="pop-src">${esc(source)}</div></div>`
   )
 }
 
+/**
+ * Marker radius in pixels for an acreage.
+ *
+ * Most fires are small: a few hundred acres is a kilometre or two across,
+ * which at the zoom you look at a whole county is under a pixel. Drawing the
+ * true perimeter alone means the layer reports "3 perimeters in view" while
+ * the map appears empty, so each one also gets a dot that stays legible.
+ */
+function markerRadius(acres) {
+  const a = Math.max(1, acres ?? 1)
+  return Math.max(4, Math.min(11, 3 + Math.log10(a) * 2))
+}
+
 export function createFires(map) {
+  // Declared before the layer because the popup builder reads it to credit the
+  // right archive.
+  let mode = null
+
   const layer = L.geoJSON(null, {
     pane: 'vector',
     style: (f) => style(f.properties?.poly_GISAcres ?? f.properties?.GIS_ACRES),
-    onEachFeature: (f, l) => l.bindPopup(popupHtml(normalise(f)), { maxWidth: 300 }),
+    onEachFeature: (f, l) =>
+      l.bindPopup(popupHtml(normalise(f), SOURCES[mode]?.label ?? ''), { maxWidth: 300 }),
   })
+  // Dots live in their own layer so they can be shown and hidden per zoom
+  // without touching the polygons.
+  const dots = L.layerGroup([], { pane: 'vector' })
 
-  let mode = null
+  /**
+   * Show a dot only while its polygon is too small to see.
+   *
+   * Past that the perimeter itself carries the shape, and a dot sitting in the
+   * middle of it would just be clutter.
+   */
+  function syncDots() {
+    const z = map.getZoom()
+    for (const d of dots.getLayers()) {
+      const b = d._perimeter
+      const nw = map.project(b.getNorthWest(), z)
+      const se = map.project(b.getSouthEast(), z)
+      const px = Math.max(Math.abs(se.x - nw.x), Math.abs(se.y - nw.y))
+      d.setStyle({ opacity: px < 14 ? 1 : 0, fillOpacity: px < 14 ? 0.85 : 0 })
+    }
+  }
+  map.on('zoomend', syncDots)
+
   let seq = 0
   const state = { count: 0, loading: false, error: null }
 
@@ -105,10 +157,7 @@ export function createFires(map) {
     state.loading = true
     state.error = null
     try {
-      const url = esriQuery(mode === 'historic' ? HISTORIC : CURRENT, map.getBounds(), {
-        limit: mode === 'historic' ? 300 : 400,
-        ...(mode === 'historic' ? { outFields: 'INCIDENT,FIRE_YEAR,GIS_ACRES' } : {}),
-      })
+      const url = esriQuery(SOURCES[mode], map.getBounds())
       const r = await fetch(url)
       if (!r.ok) throw new Error(`WFIGS HTTP ${r.status}`)
       const gj = await r.json()
@@ -129,7 +178,24 @@ export function createFires(map) {
       // so count what actually made it onto the map rather than what arrived.
       const drawable = gj.features.filter((f) => f?.geometry?.type)
       layer.clearLayers()
+      dots.clearLayers()
       layer.addData({ type: 'FeatureCollection', features: drawable })
+
+      layer.eachLayer((l) => {
+        const d = normalise(l.feature)
+        const b = l.getBounds()
+        const dot = L.circleMarker(b.getCenter(), {
+          pane: 'vector',
+          radius: markerRadius(d.acres),
+          ...style(d.acres),
+          weight: 1.4,
+          fillOpacity: 0.85,
+        })
+        dot._perimeter = b
+        dot.bindPopup(popupHtml(d, SOURCES[mode]?.label ?? ''), { maxWidth: 300 })
+        dots.addLayer(dot)
+      })
+      syncDots()
       state.count = drawable.length
     } catch (e) {
       if (mine === seq) state.error = e.message
@@ -148,12 +214,15 @@ export function createFires(map) {
       mode = next
       if (!next) {
         map.removeLayer(layer)
+        map.removeLayer(dots)
         layer.clearLayers()
+        dots.clearLayers()
         state.count = 0
         map.fire('fires:update')
         return
       }
       layer.addTo(map)
+      dots.addTo(map)
       load()
     },
     /** Perimeters currently drawn, for the assistant to read. */
