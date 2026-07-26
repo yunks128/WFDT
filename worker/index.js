@@ -42,9 +42,11 @@ GROUNDING RULES — these override any instinct to be helpful by filling gaps:
 2. If a tool returns nothing or errors, say exactly that. "No perimeters are in view" is a correct answer; do not substitute a plausible one.
 3. Never invent an incident name, acreage, containment figure, cause or evacuation order. If a field came back null, report it as unknown.
 4. Fire perimeters are the official reported footprint, not a live fire front; they lag, sometimes by a day or more. Thermal anomaly products detect heat, which is not the same as fire — they also flag industrial sources and reflective surfaces.
-5. You are not an emergency authority. If asked whether a place is safe or should evacuate, give what the data shows and point the user to CAL FIRE, local emergency services and watchduty.org for official orders. Never issue or imply an evacuation instruction.
-6. You know wildfire science, fire weather and how these instruments work; answer background questions from that knowledge, but keep it clearly separate from live map readings.
-7. If you are unsure, say so. A wrong number in an operational fire tool is worse than no number.
+
+5. There are three perimeter sources and they are not interchangeable. 'current' is what is burning now. 'ytd' is every fire so far in the present season, and is what a question about this year means. 'historic' is the certified archive: it runs from the 1800s to 2024, thins out sharply after about 2021, and holds nothing at all for 2025 or 2026, because certification takes years. So a request for a recent year should go to 'ytd', not to the archive with a year filter — and if someone asks the archive for a year it does not hold, say the archive does not have it yet and offer the season-to-date layer instead.
+6. You are not an emergency authority. If asked whether a place is safe or should evacuate, give what the data shows and point the user to CAL FIRE, local emergency services and watchduty.org for official orders. Never issue or imply an evacuation instruction.
+7. You know wildfire science, fire weather and how these instruments work; answer background questions from that knowledge, but keep it clearly separate from live map readings.
+8. If you are unsure, say so. A wrong number in an operational fire tool is worse than no number.
 
 Be concise and factual. Give latitude/longitude to one decimal place, acreage rounded, and always include units.
 
@@ -95,11 +97,18 @@ const TOOLS = [
     toolSpec: {
       name: 'set_fire_perimeters',
       description:
-        'Show current or historical WFIGS fire perimeters, or turn them off. Perimeters load for the visible extent, so move the map first when asking about somewhere else.',
+        "Choose which fire perimeters to show. 'current' is what is burning now; 'ytd' is every fire so far this season, which is the right source for a question about this year; 'historic' is the certified archive, which only reaches 2024 and is sparse after about 2021. Perimeters load for the visible extent, so move the map first when asking about somewhere else.",
       inputSchema: {
         json: {
           type: 'object',
-          properties: { mode: { type: 'string', enum: ['current', 'historic', 'off'] } },
+          properties: {
+            mode: { type: 'string', enum: ['current', 'ytd', 'historic', 'off'] },
+            year: {
+              type: 'integer',
+              description:
+                'Restrict the historical archive to one fire year. Ignored for the other modes, which are a single season already.',
+            },
+          },
           required: ['mode'],
         },
       },
@@ -321,7 +330,7 @@ The assistant can, and ONLY can:
 - read the current map view, and move it to a place or zoom
 - list the available map layers and turn any of them on or off (thermal anomalies, vegetation indices, smoke and air quality, soil moisture, precipitation, weather model fields)
 - show an animated GFS 10 m wind field and sample its speed and direction at a point
-- show current or historical WFIGS fire perimeters, list the ones in view with acreage and containment, and zoom to a named one
+- show fire perimeters from three sources — burning now, this season to date, or the pre-2025 archive — list the ones in view with acreage and containment, and zoom to a named one
 - move the timeline to a date, and play or stop a time-lapse across a date range
 - answer background questions about wildfire science, fire weather and how these instruments work
 

@@ -33,6 +33,19 @@ const SOURCES = {
     ].join(','),
     limit: 400,
   },
+  ytd: {
+    label: 'WFIGS interagency perimeters (year to date)',
+    url: `${HOST}/WFIGS_Interagency_Perimeters_YearToDate/FeatureServer/0/query`,
+    fields: [
+      'poly_IncidentName',
+      'poly_GISAcres',
+      'attr_FireDiscoveryDateTime',
+      'attr_PercentContained',
+      'attr_IncidentTypeCategory',
+      'attr_POOState',
+    ].join(','),
+    limit: 400,
+  },
   historic: {
     label: 'Interagency fire perimeter history',
     url: `${HOST}/InterAgencyFirePerimeterHistory_All_Years_View/FeatureServer/0/query`,
@@ -41,9 +54,12 @@ const SOURCES = {
   },
 }
 
-function esriQuery(src, bounds) {
+function esriQuery(src, bounds, year) {
   const q = new URLSearchParams({
-    where: '1=1',
+    // The archive stores unusable sentinels in the year column — the range
+    // runs from 0 to 9999 — so a year filter also has to exclude them, and an
+    // unfiltered query still reports honest years to the caller.
+    where: year ? `FIRE_YEAR_INT=${Number(year)}` : '1=1',
     outFields: src.fields,
     geometryType: 'esriGeometryEnvelope',
     geometry: [
@@ -119,6 +135,7 @@ export function createFires(map) {
   // Declared before the layer because the popup builder reads it to credit the
   // right archive.
   let mode = null
+  let year = null
 
   const layer = L.geoJSON(null, {
     pane: 'vector',
@@ -157,7 +174,7 @@ export function createFires(map) {
     state.loading = true
     state.error = null
     try {
-      const url = esriQuery(SOURCES[mode], map.getBounds())
+      const url = esriQuery(SOURCES[mode], map.getBounds(), mode === 'historic' ? year : null)
       const r = await fetch(url)
       if (!r.ok) throw new Error(`WFIGS HTTP ${r.status}`)
       const gj = await r.json()
@@ -210,6 +227,19 @@ export function createFires(map) {
   return {
     layer,
     state,
+    /**
+     * Restrict the archive to a single fire year.
+     *
+     * Only meaningful for the historical layer; the current and year-to-date
+     * services are already a single season by definition.
+     */
+    setYear(y) {
+      year = y ? Number(y) : null
+      if (mode === 'historic') load()
+      return { ok: true, year }
+    },
+    getYear: () => year,
+
     setMode(next) {
       mode = next
       if (!next) {

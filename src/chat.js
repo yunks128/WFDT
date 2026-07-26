@@ -25,7 +25,8 @@ const MAX_TOOL_ROUNDS = 5
  */
 const SUGGESTIONS = [
   { label: "What's burning now?", text: 'What fire perimeters are currently in view?' },
-  { label: 'Show active fires', text: 'Turn on the current fire perimeters layer.' },
+  { label: 'Show active fires', text: 'Turn on the active fire perimeters layer.' },
+  { label: 'Fires this season', text: 'Show every fire perimeter so far this season.' },
   { label: 'Thermal hotspots', text: 'Turn on the VIIRS NOAA-20 thermal anomalies layer.' },
   { label: 'Smoke and air quality', text: 'Which layers show smoke or air quality, and can you turn one on?' },
   { label: 'Vegetation dryness', text: 'Show me a vegetation index layer so I can judge fuel dryness.' },
@@ -248,8 +249,8 @@ export function createChat({ ctx, els }) {
       }
     },
 
-    set_fire_perimeters({ mode }) {
-      return ctx.setFires(mode === 'off' ? null : mode)
+    set_fire_perimeters({ mode, year }) {
+      return ctx.setFires(mode === 'off' ? null : mode, year)
     },
 
     focus_fire({ name }) {
@@ -484,7 +485,7 @@ function describe(name, out) {
     case 'list_fires':
       return `${out.count} fire${out.count === 1 ? '' : 's'}`
     case 'set_fire_perimeters':
-      return `perimeters ${out.mode}`
+      return `perimeters ${out.mode}${out.year ? ` ${out.year}` : ''}`
     case 'focus_fire':
       return `focused ${out.focused.name}`
     case 'get_wind':

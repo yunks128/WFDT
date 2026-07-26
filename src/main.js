@@ -207,8 +207,14 @@ function buildPanel() {
   // ── Fire perimeters, the live layer ──
   host.appendChild(groupLabel('Fire perimeters (live)'))
   for (const [id, mode, name, meta] of [
-    ['fires-current', 'current', 'Current fire perimeters', 'WFIGS · refreshes as you pan'],
-    ['fires-historic', 'historic', 'Historical fire perimeters', 'InterAgency archive'],
+    ['fires-current', 'current', 'Active fire perimeters', 'WFIGS · currently burning'],
+    ['fires-ytd', 'ytd', 'This season to date', 'WFIGS · every fire so far this year'],
+    [
+      'fires-historic',
+      'historic',
+      'Historical fire perimeters',
+      'InterAgency archive · 2024 and earlier',
+    ],
   ]) {
     host.appendChild(
       row({
@@ -218,9 +224,12 @@ function buildPanel() {
         meta,
         checked: false,
         onChange: (on) => {
-          // The two share one layer, so turning one on releases the other.
-          const other = id === 'fires-current' ? 'fires-historic' : 'fires-current'
-          if (on && $(other)?.checked) $(other).checked = false
+          // All three share one layer, so turning one on releases the others.
+          if (on) {
+            for (const other of ['fires-current', 'fires-ytd', 'fires-historic']) {
+              if (other !== id && $(other)?.checked) $(other).checked = false
+            }
+          }
           fires.setMode(on ? mode : null)
           renderLive()
         },
@@ -564,9 +573,11 @@ createChat({
       }
       return true
     },
-    setFires(mode) {
+    setFires(mode, year) {
+      fires.setYear(mode === 'historic' ? year : null)
       for (const [id, m] of [
         ['fires-current', 'current'],
+        ['fires-ytd', 'ytd'],
         ['fires-historic', 'historic'],
       ]) {
         const cb = $(id)
@@ -577,7 +588,7 @@ createChat({
           cb.dispatchEvent(new Event('change'))
         }
       }
-      return { ok: true, mode: mode ?? 'off' }
+      return { ok: true, mode: mode ?? 'off', ...(fires.getYear() ? { year: fires.getYear() } : {}) }
     },
     setDate,
     animate: startAnimation,
