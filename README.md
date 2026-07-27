@@ -21,6 +21,14 @@ runs in a Cloudflare Worker holding the token as a Worker secret, pushed
 straight from GitHub Secrets by the deploy workflow so it never touches a
 laptop or the repository.
 
+## What opens by default
+
+The GFS 10 m wind field and the active fire perimeters, over Esri imagery with
+place labels. Those two are what the map is for, and both are cheap — one
+bounded query and about 21 KiB of wind JSON — so opening on a bare basemap
+would only make you go and find them. Everything else in the catalogue starts
+off.
+
 ## Layers
 
 92 layers in the groups the reference mission uses: fire perimeters and thermal

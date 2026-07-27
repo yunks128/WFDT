@@ -190,7 +190,7 @@ function buildPanel() {
       type: 'checkbox',
       name: 'GFS 10 m wind',
       meta: 'Animated particles · slider fades the speed raster',
-      checked: false,
+      checked: true,
       opacity: 0.85,
       onOpacity: (v) => wind.setRasterOpacity(v),
       onChange: (on) => {
@@ -222,7 +222,7 @@ function buildPanel() {
         type: 'checkbox',
         name,
         meta,
-        checked: false,
+        checked: id === 'fires-current',
         onChange: (on) => {
           // All three share one layer, so turning one on releases the others.
           if (on) {
@@ -599,6 +599,15 @@ createChat({
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 buildPanel()
+
+// Defaults for a wildfire map: what is burning, and the wind driving it. Both
+// are cheap — one bounded query and ~21 KiB of wind JSON — and they are what
+// the map is for, so opening on an empty basemap would make the user hunt for
+// them. The rest of the catalogue stays off.
+windOn = true
+wind.addTo(map)
+fires.setMode('current')
+
 loadWindIndex()
 applyTime()
 renderReadout()
