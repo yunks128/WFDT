@@ -61,11 +61,12 @@ export function createMap(el) {
   setBasemap(BASEMAPS[0].id)
 
   // ── Overlays ──────────────────────────────────────────────────────────────
+  // Each entry is { spec, front, pending, target } rather than a bare layer,
+  // because stepping through time needs two of them — see setTime below.
   const overlays = new Map()
   let currentDate = null
 
-  const build = (spec) => {
-    const url = overlayUrl(spec, currentDate)
+  const build = (spec, date) => {
     const opts = {
       pane: 'raster',
       opacity: spec.opacity ?? 1,
@@ -86,10 +87,49 @@ export function createMap(el) {
         layers: spec.wmsLayer,
         format: 'image/png',
         transparent: true,
-        ...(spec.time && currentDate ? { time: String(currentDate).slice(0, 10) } : {}),
+        ...(spec.time && date ? { time: String(date).slice(0, 10) } : {}),
       })
     }
-    return L.tileLayer(url, opts)
+    return L.tileLayer(overlayUrl(spec, date), opts)
+  }
+
+  /**
+   * Move one layer to a new date without letting the map show through.
+   *
+   * setUrl and setParams both redraw by dropping every tile the layer already
+   * has and re-requesting, so the layer is empty for as long as the network
+   * takes — which is what makes a time-lapse flash on every frame. Instead the
+   * next date is loaded into a second layer sitting invisibly on top, and the
+   * two are swapped only once it has drawn.
+   */
+  function retime(entry, date) {
+    const { spec } = entry
+    // A frame can be superseded before it ever appears, so the half-loaded one
+    // is discarded rather than left to pop in later out of order.
+    if (entry.pending) {
+      map.removeLayer(entry.pending)
+      entry.pending = null
+    }
+
+    const next = build(spec, date)
+    next.setOpacity(0)
+    next.addTo(map)
+    entry.pending = next
+
+    let done = false
+    const swap = () => {
+      if (done || entry.pending !== next) return
+      done = true
+      clearTimeout(cap)
+      next.setOpacity(entry.target)
+      if (entry.front && entry.front !== next) map.removeLayer(entry.front)
+      entry.front = next
+      entry.pending = null
+    }
+    next.once('load', swap)
+    // Leaflet fires `load` once every tile has resolved, error included, but a
+    // request that never settles would otherwise strand the frame invisible.
+    const cap = setTimeout(swap, 8000)
   }
 
   return {
@@ -99,24 +139,39 @@ export function createMap(el) {
     toggleOverlay(id, on) {
       const spec = OVERLAYS.find((o) => o.id === id)
       if (!spec) return false
+      let entry = overlays.get(id)
       if (on) {
-        if (!overlays.has(id)) overlays.set(id, build(spec))
-        overlays.get(id).addTo(map)
-      } else if (overlays.has(id)) {
-        map.removeLayer(overlays.get(id))
+        if (!entry) {
+          entry = { spec, front: build(spec, currentDate), pending: null, target: spec.opacity ?? 1 }
+          overlays.set(id, entry)
+        }
+        entry.front.addTo(map)
+      } else if (entry) {
+        map.removeLayer(entry.front)
+        if (entry.pending) {
+          map.removeLayer(entry.pending)
+          entry.pending = null
+        }
       }
       return true
     },
-    setOpacity: (id, v) => overlays.get(id)?.setOpacity(v),
-    isOn: (id) => !!overlays.get(id) && map.hasLayer(overlays.get(id)),
+    setOpacity(id, v) {
+      const entry = overlays.get(id)
+      if (!entry) return
+      entry.target = v
+      entry.front?.setOpacity(v)
+    },
+    isOn: (id) => {
+      const e = overlays.get(id)
+      return !!e && map.hasLayer(e.front)
+    },
     /** Re-point every time-aware layer at a new date. */
     setTime(date) {
       currentDate = date
-      for (const [id, layer] of overlays) {
-        const spec = OVERLAYS.find((o) => o.id === id)
-        if (!spec?.time) continue
-        if (spec.kind === 'wms') layer.setParams({ time: String(date).slice(0, 10) })
-        else layer.setUrl(overlayUrl(spec, date))
+      for (const [, entry] of overlays) {
+        if (!entry.spec.time) continue
+        if (!map.hasLayer(entry.front)) continue
+        retime(entry, date)
       }
     },
   }
