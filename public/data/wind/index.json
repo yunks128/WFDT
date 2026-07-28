@@ -1,33 +1,33 @@
 {
  "source": "NOAA NCEP GFS 0.25\u00b0 via NOMADS GRIB filter",
- "cycle": "2026-07-27T12:00:00Z",
- "built": "2026-07-27T18:59:43Z",
+ "cycle": "2026-07-27T18:00:00Z",
+ "built": "2026-07-28T01:00:19Z",
  "variable": "10 m wind (u, v) in m/s",
  "step": 0.25,
  "frames": [
   {
    "hour": 0,
-   "valid": "2026-07-27T12:00:00Z",
+   "valid": "2026-07-27T18:00:00Z",
    "file": "f000.json"
   },
   {
    "hour": 6,
-   "valid": "2026-07-27T18:00:00Z",
+   "valid": "2026-07-28T00:00:00Z",
    "file": "f006.json"
   },
   {
    "hour": 12,
-   "valid": "2026-07-28T00:00:00Z",
+   "valid": "2026-07-28T06:00:00Z",
    "file": "f012.json"
   },
   {
    "hour": 18,
-   "valid": "2026-07-28T06:00:00Z",
+   "valid": "2026-07-28T12:00:00Z",
    "file": "f018.json"
   },
   {
    "hour": 24,
-   "valid": "2026-07-28T12:00:00Z",
+   "valid": "2026-07-28T18:00:00Z",
    "file": "f024.json"
   }
  ]
