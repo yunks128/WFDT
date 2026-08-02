@@ -61,6 +61,16 @@ as unknown rather than guessing, and never to issue or imply an evacuation
 instruction — for orders it points to CAL FIRE, local emergency services and
 watchduty.org.
 
+## Demo video
+
+`wfdt-demo.mp4` (and a 720p cut) is a guided tour of the map — clicking a live
+perimeter for its incident card, the layer catalogue, a full-frame imagery
+toggle and the VIIRS infrared composite (M11-I2-I1), the GFS wind field, four
+live Ask-AI queries and the timeline.
+
+Background music is *"Blippy Trance"* by Kevin MacLeod (incompetech.com),
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
 ## Run
 
 ```bash
