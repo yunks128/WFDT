@@ -556,7 +556,7 @@ export default {
                 },
               ],
               toolConfig: { tools: [SUGGEST_TOOL], toolChoice: { tool: { name: 'suggest' } } },
-              inferenceConfig: { maxTokens: 500, temperature: 0 },
+              inferenceConfig: { maxTokens: 500 },
             }),
           })
           if (!r.ok) continue
@@ -614,14 +614,11 @@ export default {
         messages: body.messages,
         system: [{ text: datedSystemPrompt() }],
         toolConfig: { tools: TOOLS },
-        // Temperature 0 for an operational readout: the same question should
-        // give the same answer, and there is no reason to sample creatively
-        // when the substance comes from tool results. It narrows the sampling
-        // distribution rather than guaranteeing correctness — the grounding
-        // rules in the system prompt are what actually constrain invention.
-        // topP is deliberately left unset; tuning both at once is not
-        // meaningful and Anthropic's guidance is to pick one.
-        inferenceConfig: { maxTokens: 2048, temperature: 0 },
+        // An operational readout wants determinism, but this model no longer
+        // accepts `temperature` (it 400s), so we rely on the grounding rules in
+        // the system prompt to constrain invention rather than on sampling
+        // controls. maxTokens is the only inference knob left set.
+        inferenceConfig: { maxTokens: 2048 },
       }),
     })
 
